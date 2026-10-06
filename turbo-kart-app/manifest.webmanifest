@@ -1,0 +1,16 @@
+{
+  "name": "Turbo Kart GP",
+  "short_name": "Turbo Kart",
+  "description": "A landscape kart racer: three circuits, a three-cup Grand Prix, and a garage of upgrades.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "orientation": "landscape",
+  "background_color": "#14142B",
+  "theme_color": "#14142B",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
