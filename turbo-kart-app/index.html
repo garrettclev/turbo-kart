@@ -183,7 +183,7 @@
   .item-slot canvas{width:44px;height:44px}
   .item-slot.rolling{box-shadow:inset 0 0 0 3px var(--accent),0 3px 0 rgba(0,0,0,.4)}
   .item-slot .cnt{position:absolute;right:-4px;bottom:-4px;background:var(--accent);color:var(--ink);font-family:var(--display);font-size:11px;border-radius:999px;padding:2px 6px}
-  .ring{width:56px;height:56px;border-radius:50%;background:var(--panel);box-shadow:0 3px 0 rgba(0,0,0,.4)} .ring canvas{width:56px;height:56px;display:block}
+  .map{width:90px;height:90px;border-radius:16px;background:var(--panel);box-shadow:0 3px 0 rgba(0,0,0,.4)} .map canvas{width:90px;height:90px;display:block}
   .center-msg{position:absolute;left:0;right:0;top:30%;text-align:center;font-family:var(--display);font-size:clamp(40px,11vw,96px);line-height:1;
     color:var(--accent);text-shadow:0 5px 0 var(--accent-dk),0 10px 24px rgba(0,0,0,.5);pointer-events:none;opacity:0;transform:scale(.6)}
   .center-msg.show{animation:pop .9s cubic-bezier(.2,1.4,.4,1) both}
@@ -268,7 +268,7 @@
       </div>
     </div>
     <div class="hud-center">
-      <div class="ring"><canvas id="ring-canvas" width="112" height="112"></canvas></div>
+      <div class="map"><canvas id="map-canvas" width="180" height="180"></canvas></div>
       <div class="item-slot" id="item-slot" aria-live="polite"><canvas id="item-canvas" width="88" height="88"></canvas><span class="cnt" id="item-cnt" hidden>3</span></div>
       <button class="icon" id="btn-pause" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button>
     </div>
@@ -422,7 +422,7 @@ const U = {
 const $=(id)=>document.getElementById(id);
 
 /* ================= constants ================= */
-const SEG_LEN=200, RUMBLE=3, ROAD_W=2000, CAM_H=1000, DRAW_DIST=240, FOV=100;
+const SEG_LEN=200, RUMBLE=3, ROAD_W=2000, CAM_H=1450, DRAW_DIST=300, FOV=100;
 const CAM_DEPTH=1/Math.tan((FOV/2)*Math.PI/180);
 const PLAYER_Z=CAM_H*CAM_DEPTH*1.8;
 const MAX_SPEED=SEG_LEN*60;
@@ -614,32 +614,52 @@ function buildExtraSprites(){ const s=(img,ww)=>({img,ww});
   SPR.neonA=s(makeNeon('TURBO','#FF4FD8'),1300); SPR.neonB=s(makeNeon('DRIFT','#2FE3FF'),1300); SPR.container=s(makeContainer('#2FA3C9'),2000); SPR.containerB=s(makeContainer('#FF7A3D'),2000);
   SPR.barrier=s(makeBarrier(),900); SPR.streetLamp=s(makeStreetLamp(),520); SPR.rocket=s(makeRocket(),500); SPR.star=s(makeStar(),500); SPR.triple=s(makeTripleShell(),500); }
 
-/* ================= tracks ================= */
-// road rows: [enter, hold, leave, curve, hillΔ, feature]  feature: 'boost' | 'ramp' | 'boostL' | 'boostR'
+/* ================= tracks (closed loops) ================= */
+// Each track is a closed 2D shape. The road is sampled along it, so the minimap and the race view describe the same loop.
+// hills: [amplitude in world units, waves per lap, phase]   boosts/ramps: fractions of the lap, snapped to the nearest straight.
 const TRACKS=[
-  { id:'sunflower', name:'SUNFLOWER SPEEDWAY', desc:'Rolling meadow circuit. Two hairpins, a crest S-bend, a jump and a fast chicane.', grip:1.0, sky:'day', bpm:128,
+  { id:'sunflower', name:'SUNFLOWER SPEEDWAY', desc:'Rolling meadow loop. A long back straight, two hairpins and a jump over the crest.', grip:1.0, sky:'day', bpm:128, segs:1180,
+    pts:[[-60,0],[-30,0],[0,0],[40,0],[80,0],[112,8],[130,30],[128,56],[110,72],[86,76],[66,72],[56,86],[66,106],[52,124],[24,130],[-2,120],[-14,98],[-4,78],[-12,58],[-34,48],[-52,30],[-62,12]],
+    hills:[[2600,1,0.6],[1600,2,2.1],[900,3,4.0]], boosts:[0.12,0.5,0.86], ramps:[0.3],
     col:{ skyTop:'#2B6CD6', skyMid:null, skyBot:'#BFE6FF', fog:'#BFE6FF', grassA:'#5FC24C', grassB:'#4FAE3E', roadA:'#6B6B74', roadB:'#636370', rumbleA:'#E23D3D', rumbleB:'#F4F4F4', startA:'#F4F4F4', startB:'#2A2A33', hillsFar:'#7FB7D9', hillsNear:'#4E9E5B', sun:'#FFF2B0', cloud:'rgba(255,255,255,.85)' },
-    scenery:[['tree1',.28],['tree2',.24],['palm',.14],['bush',.14],['flower',.12],['boulder',.08]],
-    road:[ [60,0,0,0,0], [20,30,20,-3,0], [15,15,15,3,10], [20,45,20,-5,0], [30,0,0,0,-10,'boost'], [20,30,20,4,0], [15,20,15,-4,0], [20,20,20,5,15],
-           [30,40,30,0,0,'ramp'], [25,55,25,-6,-15], [18,10,18,3,0], [18,10,18,-3,0], [20,40,20,4,10], [30,0,0,0,0,'boost'], [20,35,20,-4,-10], [20,20,20,2,0], [40,0,0,0,0] ] },
-  { id:'canyon', name:'CANYON RUN', desc:'Sunset desert sweepers. Long drifts, a double hairpin, a canyon jump and a plunging dive.', grip:1.0, sky:'sunset', bpm:120,
+    scenery:[['tree1',.28],['tree2',.24],['palm',.14],['bush',.14],['flower',.12],['boulder',.08]] },
+  { id:'canyon', name:'CANYON RUN', desc:'Sunset desert loop. Wide sweepers, a double hairpin in the gorge and a canyon jump.', grip:1.0, sky:'sunset', bpm:120, segs:1300,
+    pts:[[-70,0],[-35,0],[0,0],[50,0],[100,0],[140,8],[162,34],[158,62],[136,76],[110,70],[94,84],[100,110],[92,136],[66,148],[38,138],[26,112],[32,90],[16,72],[-12,76],[-36,64],[-42,38],[-56,22],[-72,10]],
+    hills:[[3200,1,3.4],[1800,2,0.5],[1000,4,1.2]], boosts:[0.1,0.46,0.8], ramps:[0.62],
     col:{ skyTop:'#4A2374', skyMid:'#FF7A3D', skyBot:'#FFD38A', fog:'#F2B98A', grassA:'#D9A066', grassB:'#CC9357', roadA:'#5A4E4B', roadB:'#524745', rumbleA:'#B3412C', rumbleB:'#F4E4C1', startA:'#F4E4C1', startB:'#2A2A33', hillsFar:'#8E4A6B', hillsNear:'#B85C38', sun:'#FFE08A', cloud:'rgba(255,220,200,.6)' },
-    scenery:[['cactus',.3],['mesa',.18],['deadTree',.16],['tumble',.14],['redRock',.22]],
-    road:[ [60,0,0,0,0], [25,60,25,4,10], [20,0,0,0,0,'boost'], [25,60,25,-4,-10], [20,20,20,0,20,'ramp'], [20,40,20,-6,0], [15,10,15,0,0], [20,40,20,-6,0],
-           [30,30,30,0,-35,'boost'], [25,25,25,5,0], [15,15,15,-5,0], [25,25,25,5,0], [30,50,30,0,15], [25,70,25,-3,0], [20,30,20,6,0], [40,0,0,0,0] ] },
-  { id:'frost', name:'FROSTBITE PASS', desc:'Night mountain road under the aurora. Icy grip, tight switchbacks and an ice-shelf jump.', grip:0.86, sky:'night', bpm:112,
+    scenery:[['cactus',.3],['mesa',.18],['deadTree',.16],['tumble',.14],['redRock',.22]] },
+  { id:'frost', name:'FROSTBITE PASS', desc:'Night mountain loop under the aurora. Icy grip, tight switchbacks and an ice-shelf jump.', grip:0.86, sky:'night', bpm:112, segs:1180,
+    pts:[[-60,0],[-30,0],[0,0],[40,0],[80,0],[110,10],[122,34],[108,54],[82,56],[66,72],[82,96],[84,120],[62,136],[36,130],[26,108],[34,86],[16,70],[-10,80],[-32,70],[-38,46],[-28,28],[-46,14],[-62,6]],
+    hills:[[3600,1,1.0],[2000,2,3.3],[1200,3,0.2]], boosts:[0.14,0.55,0.9], ramps:[0.36],
     col:{ skyTop:'#06091F', skyMid:null, skyBot:'#1D3B6E', fog:'#1D3B6E', grassA:'#E8F1FA', grassB:'#D7E4F2', roadA:'#3E4A5C', roadB:'#36414F', rumbleA:'#2E6BD6', rumbleB:'#F4F4F4', startA:'#F4F4F4', startB:'#2A2A33', hillsFar:'#2A4A7A', hillsNear:'#3A6AA0', sun:'#F4F8FF', cloud:'rgba(255,255,255,.12)' },
-    scenery:[['pine',.4],['snowman',.1],['lamp',.16],['iceRock',.16],['snowBush',.18]],
-    road:[ [60,0,0,0,0], [20,30,20,-4,15], [15,25,15,4,15], [20,30,20,-5,10], [15,25,15,5,0], [30,20,30,0,20,'boost'], [20,50,20,-6,-20], [20,0,0,0,0,'ramp'],
-           [20,50,20,6,-20], [20,0,0,0,-10], [15,15,15,-3,0], [15,15,15,3,0], [15,15,15,-3,0], [25,40,25,0,-20,'boost'], [20,45,20,5,0], [20,45,20,-5,0], [40,0,0,0,0] ] },
-  { id:'neon', name:'NEON HARBOR', desc:'Night city docks lit in neon. Fast wide bends, a container-yard chicane and a harbor jump.', grip:1.0, sky:'city', bpm:136,
+    scenery:[['pine',.4],['snowman',.1],['lamp',.16],['iceRock',.16],['snowBush',.18]] },
+  { id:'neon', name:'NEON HARBOR', desc:'Night city dock loop lit in neon. Fast wide bends, a container-yard chicane and a harbor jump.', grip:1.0, sky:'city', bpm:136, segs:1180,
+    pts:[[-60,0],[-30,0],[0,0],[40,0],[90,0],[130,4],[156,24],[158,52],[136,70],[106,66],[80,70],[66,90],[76,116],[56,134],[24,134],[2,118],[0,94],[12,74],[-14,60],[-42,48],[-52,26],[-64,10]],
+    hills:[[1400,1,0.0],[1000,2,1.5],[700,4,2.8]], boosts:[0.1,0.42,0.78], ramps:[0.6],
     col:{ skyTop:'#0B0B2A', skyMid:'#3A1C6E', skyBot:'#FF4FA3', fog:'#2A1548', grassA:'#2E2E4A', grassB:'#28283F', roadA:'#3A3A4F', roadB:'#333347', rumbleA:'#FF4FD8', rumbleB:'#2FE3FF', startA:'#F4F4F4', startB:'#2A2A33', hillsFar:'#1A1A3E', hillsNear:'#24244F', sun:'#FFF4D6', cloud:'rgba(255,255,255,.08)' },
-    scenery:[['bldgA',.2],['bldgB',.18],['bldgC',.14],['container',.12],['containerB',.1],['streetLamp',.16],['barrier',.1]],
-    road:[ [60,0,0,0,0], [30,50,30,3,0], [20,0,0,0,0,'boost'], [30,50,30,-3,0], [20,20,20,0,12,'ramp'], [15,10,15,4,0], [15,10,15,-4,0], [15,10,15,4,0],
-           [40,30,40,0,-12,'boost'], [25,60,25,-5,0], [20,30,20,0,0], [25,60,25,5,0], [20,20,20,-2,8], [20,20,20,2,-8,'boost'], [40,0,0,0,0] ] }
+    scenery:[['bldgA',.2],['bldgB',.18],['bldgC',.14],['container',.12],['containerB',.1],['streetLamp',.16],['barrier',.1]] }
 ];
 
-let segments=[], trackLength=0, track=TRACKS[0], COL=TRACKS[0].col;
+function buildPath(points, targetSegs, segLen){
+  const n=points.length; const P=(i)=>points[((i%n)+n)%n];
+  const cr=(p0,p1,p2,p3,t)=>{ const t2=t*t,t3=t2*t; return [0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3), 0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)]; };
+  // dense sampling
+  const dense=[]; const STEPS=40;
+  for(let i=1;i<=n;i++) for(let s=0;s<STEPS;s++) dense.push(cr(P(i-1),P(i),P(i+1),P(i+2),s/STEPS)); // start at control point 1 so the opening stretch is the straight
+  let len=0; const cum=[0]; for(let i=0;i<dense.length;i++){ const a=dense[i], b=dense[(i+1)%dense.length]; len+=Math.hypot(b[0]-a[0],b[1]-a[1]); cum.push(len); }
+  const scale=(targetSegs*segLen)/len; // world units per design unit
+  const N=targetSegs; const step=len/N; const pts=[]; let j=0;
+  for(let k=0;k<N;k++){ const d=k*step; while(j<cum.length-2&&cum[j+1]<d) j++; const f=(d-cum[j])/Math.max(1e-9,cum[j+1]-cum[j]); const a=dense[j], b=dense[(j+1)%dense.length]; pts.push([(a[0]+(b[0]-a[0])*f)*scale,(a[1]+(b[1]-a[1])*f)*scale]); }
+  // headings & curvature -> renderer curve (positive = right turn)
+  const head=[]; for(let k=0;k<N;k++){ const a=pts[k], b=pts[(k+1)%N]; head.push(Math.atan2(b[1]-a[1],b[0]-a[0])); }
+  let raw=[]; for(let k=0;k<N;k++){ let d=head[(k+1)%N]-head[k]; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; raw.push(-d*segLen); }
+  // smooth (circular moving average)
+  const curves=[]; const Wn=8; for(let k=0;k<N;k++){ let s=0; for(let o=-Wn;o<=Wn;o++) s+=raw[((k+o)%N+N)%N]; const c=s/(2*Wn+1); curves.push(7*Math.tanh(c/7)); }
+  return {pts,curves,N,scale};
+}
+
+function ensureMap(t){ if(t.map) return t.map; const geo=buildPath(t.pts,t.segs,SEG_LEN); t.map={pts:geo.pts,minX:Math.min(...geo.pts.map(p=>p[0])),maxX:Math.max(...geo.pts.map(p=>p[0])),minY:Math.min(...geo.pts.map(p=>p[1])),maxY:Math.max(...geo.pts.map(p=>p[1]))}; return t.map; }
+let segments=[], trackLength=0, track=TRACKS[0], COL=TRACKS[0].col, mapLayer=null;
 function lastY(){ return segments.length ? segments[segments.length-1].p2.world.y : 0; }
 function addSegment(curve,y){
   const n=segments.length;
@@ -648,24 +668,21 @@ function addSegment(curve,y){
     p2:{world:{x:0,y:y,z:(n+1)*SEG_LEN},camera:{x:0,y:0,z:0},screen:{x:0,y:0,w:0,scale:0}},
     sprites:[], boxes:[], coins:[], cars:[], shade:Math.floor(n/RUMBLE)%2, start:false, boost:false, ramp:false, clip:0, fog:0, looped:false });
 }
-function addRoad(enter,hold,leave,curve,y,feature){
-  const startY=lastY(), endY=startY+y*SEG_LEN, total=enter+hold+leave, from=segments.length;
-  for(let n=0;n<enter;n++) addSegment(U.easeIn(0,curve,n/enter), U.easeInOut(startY,endY,n/total));
-  for(let n=0;n<hold;n++)  addSegment(curve, U.easeInOut(startY,endY,(enter+n)/total));
-  for(let n=0;n<leave;n++) addSegment(U.easeInOut(curve,0,n/leave), U.easeInOut(startY,endY,(enter+hold+n)/total));
-  if(feature==='boost'){ const m=from+Math.floor(total/2); for(let k=0;k<4;k++) segments[m+k].boost=true; }
-  if(feature==='ramp'){ const m=from+Math.floor(total/2); segments[m].ramp=true; segments[m+1].ramp=true; }
-}
 function addSprite(n,spr,offset){ if(n>=0&&n<segments.length) segments[n].sprites.push({spr:spr,offset:offset}); }
+function nearestStraight(N,t,avoidRamp){ const c=Math.round(t*N); let best=-1,bestScore=1e9; for(let d=-70;d<=70;d++){ const i=((c+d)%N+N)%N; if(i>=LINE_SEG-12&&i<=LINE_SEG+10) continue; let s=0; for(let k=0;k<6;k++){ const seg=segments[(i+k)%N]; s+=Math.abs(seg.curve)*10+(avoidRamp&&seg.ramp?100:0)+(seg.boost?100:0); } s+=Math.abs(d)*0.05; if(s<bestScore){ bestScore=s; best=i; } } return best; }
 function buildTrack(t){
   track=t; COL=t.col; segments=[];
-  for(const r of t.road) addRoad(r[0],r[1],r[2],r[3],r[4],r[5]);
-  const dy=-lastY()/SEG_LEN; addRoad(40,20,40,0,dy);
-  segments[segments.length-1].p2.world.y=0;
-  trackLength=segments.length*SEG_LEN;
-  const N=segments.length;
+  const geo=buildPath(t.pts,t.segs,SEG_LEN); const N=geo.N;
+  const hillY=(f)=>{ let y=0; for(const [amp,k,ph] of t.hills) y+=amp*Math.sin(2*Math.PI*k*f+ph); return y; };
+  const y0=hillY(0);
+  for(let k=0;k<N;k++) addSegment(geo.curves[k], hillY((k+1)/N)-y0);
+  segments[N-1].p2.world.y=0; segments[0].p1.world.y=0;
+  trackLength=N*SEG_LEN;
+  t.map={pts:geo.pts, minX:Math.min(...geo.pts.map(p=>p[0])), maxX:Math.max(...geo.pts.map(p=>p[0])), minY:Math.min(...geo.pts.map(p=>p[1])), maxY:Math.max(...geo.pts.map(p=>p[1]))};
   for(let i=LINE_SEG;i<LINE_SEG+2;i++) segments[i].start=true;
   addSprite(LINE_SEG,SPR.flag,-1.35); addSprite(LINE_SEG,SPR.flag,1.35);
+  for(const f of t.ramps){ const i=nearestStraight(N,f,false); if(i>=0){ segments[i].ramp=true; segments[(i+1)%N].ramp=true; } }
+  for(const f of t.boosts){ const i=nearestStraight(N,f,true); if(i>=0) for(let k=0;k<4;k++) segments[(i+k)%N].boost=true; }
   const r=U.rng(20261005+TRACKS.indexOf(t)*7919);
   const pick=()=>{ let v=r(); for(const [k,w] of t.scenery){ v-=w; if(v<=0) return SPR[k]; } return SPR[t.scenery[0][0]]; };
   for(let n=0;n<N;n+=2){
@@ -677,12 +694,14 @@ function buildTrack(t){
   }
   const bb=t.id==='neon'?[SPR.neonA,SPR.neonB]:[SPR.signDrift,SPR.signTurbo];
   for(let n=40;n<N-10;n++){ const s=segments[n]; if(Math.abs(s.curve)>=4 && Math.abs(segments[n-1].curve)<4 && n%2===0) addSprite(Math.max(0,n-30), bb[r()<0.5?0:1], (r()<0.5?-1:1)*1.6); }
-  for(const f of [0.08,0.3,0.52,0.74,0.9]){ const n=Math.floor(N*f); if((n>LINE_SEG+6||n<LINE_SEG-8)&&!segments[n].ramp) for(const off of [-0.55,0,0.55]) segments[n].boxes.push({offset:off,respawn:0}); }
+  for(const f of [0.08,0.3,0.52,0.74,0.9]){ let n=Math.floor(N*f); while(segments[n].ramp||segments[n].boost) n=(n+3)%N; if(n>LINE_SEG+6||n<LINE_SEG-8) for(const off of [-0.55,0,0.55]) segments[n].boxes.push({offset:off,respawn:0}); }
   let since=0;
-  for(let n=LINE_SEG+10;n<N-12;n++){ since++; if(since>60 && Math.abs(segments[n].curve)<0.6 && !segments[n].boxes.length && !segments[n].boost){ const lane=[-0.5,0,0.5][Math.floor(r()*3)]; for(let k=0;k<5;k++) segments[n+k*2].coins.push({offset:lane,taken:false}); since=0; n+=10; } }
+  for(let n=LINE_SEG+10;n<N-12;n++){ since++; if(since>60 && Math.abs(segments[n].curve)<0.6 && !segments[n].boxes.length && !segments[n].boost && !segments[n].ramp){ const lane=[-0.5,0,0.5][Math.floor(r()*3)]; for(let k=0;k<5;k++) segments[n+k*2].coins.push({offset:lane,taken:false}); since=0; n+=10; } }
   let cones=0; for(let n=60;n<N-10&&cones<6;n+=7){ if(Math.abs(segments[n].curve)>2.5&&Math.abs(segments[n].curve)<4.5&&r()<0.25){ addSprite(n,SPR.cone,(segments[n].curve>0?-1:1)*0.8); cones++; } }
+  mapLayer=null;
 }
 function findSegment(z){ return segments[Math.floor(z/SEG_LEN)%segments.length]; }
+
 
 /* ================= audio + music ================= */
 const Audio_={ ctx:null, on:true, musicOn:true, engine:null, engineGain:null, engine2:null, music:{timer:null,next:0,step:0,gain:null,bpm:128},
@@ -1099,7 +1118,7 @@ function render(){
   let maxy=H, x=0, dx=-(baseSeg.curve*basePct); const N=segments.length;
   for(let n=0;n<DRAW_DIST;n++){
     const seg=segments[(baseSeg.index+n)%N];
-    seg.looped=seg.index<baseSeg.index; seg.fog=1-Math.exp(-Math.pow(n/DRAW_DIST,2)*4.5); seg.clip=maxy;
+    seg.looped=seg.index<baseSeg.index; seg.fog=1-Math.exp(-Math.pow(n/DRAW_DIST,2)*3.2); seg.clip=maxy;
     const camZ=p.position-(seg.looped?trackLength:0);
     project(seg.p1,(p.x*ROAD_W)-x,playerY+CAM_H,camZ); project(seg.p2,(p.x*ROAD_W)-x-dx,playerY+CAM_H,camZ);
     x+=dx; dx+=seg.curve;
@@ -1142,12 +1161,16 @@ function render(){
   for(const q of G.particles){ if(q.kind!=='confetti') continue; ctx.fillStyle=q.color; ctx.fillRect(q.x*W,q.y*H,6,10); }
   if(G.lightning>0){ ctx.fillStyle='rgba(255,255,255,'+(G.lightning/0.6*0.8)+')'; ctx.fillRect(0,0,W,H); }
 }
-function drawRing(){
-  const c=$('ring-canvas'), g=c.getContext('2d'), s=c.width, cx=s/2, cy=s/2, r=s*0.36;
-  g.clearRect(0,0,s,s); g.lineWidth=s*0.07; g.strokeStyle='rgba(255,255,255,.18)'; g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2); g.stroke();
-  g.fillStyle='#F4F4F4'; g.fillRect(cx-2,cy-r-s*0.06,4,s*0.12);
-  for(const car of G.cars){ const a=-Math.PI/2+U.pctRem(progressOf(car),trackLength)*Math.PI*2; g.fillStyle=car.color; g.beginPath(); g.arc(cx+Math.cos(a)*r,cy+Math.sin(a)*r,s*(car.isHuman?0.07:0.05),0,Math.PI*2); g.fill(); if(car.isHuman){ g.strokeStyle='#fff'; g.lineWidth=2; g.stroke(); } }
-  const a=-Math.PI/2+U.pctRem(progressOf(G.player),trackLength)*Math.PI*2; g.fillStyle='#FFC93A'; g.strokeStyle='#14142B'; g.lineWidth=3; g.beginPath(); g.arc(cx+Math.cos(a)*r,cy+Math.sin(a)*r,s*0.075,0,Math.PI*2); g.fill(); g.stroke();
+function mapXY(pt,w,h,pad,tr){ const m=(tr||track).map; const sw=m.maxX-m.minX, sh=m.maxY-m.minY; const s=Math.min((w-pad*2)/sw,(h-pad*2)/sh); const ox=(w-sw*s)/2, oy=(h-sh*s)/2; return [ox+(pt[0]-m.minX)*s, h-(oy+(pt[1]-m.minY)*s)]; }
+function drawMapPath(g,w,h,pad,roadW,color,inner,tr){ tr=tr||track; const pts=tr.map.pts; g.lineJoin='round'; g.lineCap='round'; g.beginPath(); for(let i=0;i<pts.length;i++){ const [x,y]=mapXY(pts[i],w,h,pad,tr); if(i) g.lineTo(x,y); else g.moveTo(x,y); } g.closePath(); g.lineWidth=roadW; g.strokeStyle=color; g.stroke(); if(inner){ g.lineWidth=Math.max(1,roadW*0.45); g.strokeStyle=inner; g.stroke(); }
+  const a=mapXY(pts[LINE_SEG],w,h,pad,tr), b=mapXY(pts[(LINE_SEG+1)%pts.length],w,h,pad,tr); const dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy)||1, nx=-dy/L*roadW*0.75, ny=dx/L*roadW*0.75; g.lineWidth=2.5; g.strokeStyle='#F4F4F4'; g.beginPath(); g.moveTo(a[0]-nx,a[1]-ny); g.lineTo(a[0]+nx,a[1]+ny); g.stroke(); }
+function drawMap(){
+  const c=$('map-canvas'), g=c.getContext('2d'), w=c.width, h=c.height; if(!track.map) return;
+  if(!mapLayer||mapLayer.width!==w){ mapLayer=document.createElement('canvas'); mapLayer.width=w; mapLayer.height=h; const lg=mapLayer.getContext('2d'); drawMapPath(lg,w,h,14,11,'rgba(255,255,255,.22)','rgba(20,20,43,.9)'); }
+  g.clearRect(0,0,w,h); g.drawImage(mapLayer,0,0);
+  const dot=(z,color,r,ring)=>{ const pts=track.map.pts; const i=Math.floor(U.inc(z,0,trackLength)/SEG_LEN)%pts.length; const [x,y]=mapXY(pts[i],w,h,14); g.fillStyle=color; g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill(); if(ring){ g.lineWidth=2.5; g.strokeStyle=ring; g.stroke(); } };
+  for(const car of G.cars) dot(car.z,car.color,car.isHuman?6:4.5,car.isHuman?'#fff':null);
+  dot(G.player.worldZ,'#FFC93A',7,'#14142B');
 }
 function thumbFor(t,c){ const g=c.getContext('2d'), w=c.width, h=c.height; const col=t.col;
   const sky=g.createLinearGradient(0,0,0,h*0.55); sky.addColorStop(0,col.skyTop); if(col.skyMid) sky.addColorStop(0.6,col.skyMid); sky.addColorStop(1,col.skyBot); g.fillStyle=sky; g.fillRect(0,0,w,h);
@@ -1157,7 +1180,8 @@ function thumbFor(t,c){ const g=c.getContext('2d'), w=c.width, h=c.height; const
   g.fillStyle=col.grassA; g.fillRect(0,h*0.55,w,h);
   g.fillStyle=col.roadA; g.beginPath(); g.moveTo(w*0.42,h*0.55); g.lineTo(w*0.58,h*0.55); g.lineTo(w*0.95,h); g.lineTo(w*0.05,h); g.fill();
   g.fillStyle=col.rumbleA; g.beginPath(); g.moveTo(w*0.42,h*0.55); g.lineTo(w*0.44,h*0.55); g.lineTo(w*0.1,h); g.lineTo(w*0.05,h); g.fill(); g.beginPath(); g.moveTo(w*0.56,h*0.55); g.lineTo(w*0.58,h*0.55); g.lineTo(w*0.95,h); g.lineTo(w*0.9,h); g.fill();
-  const spr=SPR[t.scenery[0][0]].img; g.drawImage(spr,w*0.08,h*0.3,w*0.16,h*0.45); g.drawImage(spr,w*0.78,h*0.32,w*0.14,h*0.4);
+  const spr=SPR[t.scenery[0][0]].img; g.drawImage(spr,w*0.06,h*0.3,w*0.14,h*0.42);
+  ensureMap(t); g.save(); g.translate(w*0.62,h*0.06); g.fillStyle='rgba(20,20,43,.55)'; rr(g,0,0,w*0.34,h*0.88,6); g.fill(); drawMapPath(g,w*0.34,h*0.88,6,3.5,'rgba(255,255,255,.9)',null,t); g.restore();
 }
 
 /* ================= UI ================= */
@@ -1182,7 +1206,7 @@ const UI={
     const kmh=Math.round(p.speed/MAX_SPEED*180); if(this.last.kmh!==kmh){ this.last.kmh=kmh; this.els.speed.textContent=kmh; }
     if(this.last.coins!==G.raceCoins){ this.last.coins=G.raceCoins; this.els.coins.textContent=G.raceCoins; }
     if(G.ghost&&G.mode!=='countdown'){ const prog=progressOf(p); const s=G.ghost.samples; let lo=0,hi=s.length-1; while(lo<hi){ const mid=(lo+hi)>>1; if(s[mid][0]<prog) lo=mid+1; else hi=mid; } const ghostT=lo/10; const delta=G.raceTime-ghostT; const txt=(delta>=0?'+':'−')+Math.abs(delta).toFixed(2); if(this.last.gd!==txt){ this.last.gd=txt; this.els.ghost.textContent=txt; this.els.ghost.classList.toggle('ahead',delta<0); this.els.ghost.classList.toggle('behind',delta>=0); } }
-    drawRing(); },
+    drawMap(); },
   standingsList(ol,rows){ ol.innerHTML=''; rows.forEach((r,i)=>{ const li=document.createElement('li'); if(r.isPlayer) li.classList.add('you');
     li.innerHTML='<span class="pos">'+(i+1)+U.ordinal(i+1)+'</span>'+(r.color?'<span class="dot" style="background:'+r.color+'"></span>':'')+'<span>'+U.esc(r.name)+'</span>'+(r.pts!=null?'<span class="pts">'+r.pts+' pts</span>':'<span class="gap">'+(r.finished?U.fmtTime(r.finishTime):'still racing')+'</span>'); ol.appendChild(li); }); },
   showResults(){ const R=G.lastResult, t=TRACKS[G.trackIndex]; if(!R) return;
